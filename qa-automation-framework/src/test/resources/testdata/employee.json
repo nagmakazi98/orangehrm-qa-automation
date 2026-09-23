@@ -1,0 +1,8 @@
+{
+  "firstName": "Aarav",
+  "lastName": "Mehta",
+  "employeeId": "QA10245",
+  "profilePicture": "src/test/resources/images/profile.png",
+  "updatedJobTitle": "Automation Tester",
+  "updatedEmploymentStatus": "Full-Time Permanent"
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="OrangeHRM Employee Lifecycle Suite" verbose="1" parallel="none">
+
+    <listeners>
+        <listener class-name="com.orangehrm.listeners.TestListener"/>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+    </listeners>
+
+    <test name="Employee Lifecycle Management">
+        <classes>
+            <class name="com.orangehrm.tests.EmployeeLifecycleTest"/>
+        </classes>
+    </test>
+
+</suite>

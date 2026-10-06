@@ -1,15 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
-<suite name="OrangeHRM Employee Lifecycle Suite" verbose="1" parallel="none">
+<suite name="OrangeHRM Test Suite" verbose="1" parallel="none">
 
     <listeners>
         <listener class-name="com.orangehrm.listeners.TestListener"/>
+        <listener class-name="com.orangehrm.listeners.RetryAnnotationTransformer"/>
         <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
     </listeners>
 
-    <test name="Employee Lifecycle Management">
+    <!--
+      TestNG Groups Configuration:
+      Groups can be selected directly in this XML file without editing any Java code.
+      Available groups:
+        - smoke       : Critical smoke sanity tests (Login, Logout, Admin access)
+        - regression  : Complete end-to-end regression test suite
+        - api         : REST API validation and cross-checks
+        - role        : Role-based access control (Admin vs ESS authorization)
+        - ui          : End-to-end browser user interface tests
+
+      To filter by group directly in XML, uncomment the <groups> block below.
+      Alternatively, filter dynamically from CLI / CI without editing files:
+        mvn clean test -Dgroups=smoke
+        mvn clean test -Dgroups=regression
+        mvn clean test -Dgroups="regression,api"
+        mvn clean test -Dgroups=role
+        mvn clean test -Dgroups=ui
+    -->
+    <test name="OrangeHRM Core Functional Tests">
+        <!--
+        <groups>
+            <run>
+                <include name="smoke"/>
+                <include name="regression"/>
+                <include name="api"/>
+                <include name="role"/>
+                <include name="ui"/>
+            </run>
+        </groups>
+        -->
         <classes>
             <class name="com.orangehrm.tests.EmployeeLifecycleTest"/>
+            <class name="com.orangehrm.tests.RoleBasedAccessTest"/>
         </classes>
     </test>
 

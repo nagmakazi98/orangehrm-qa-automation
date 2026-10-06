@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<!--
+  Smoke suite: runs only tests tagged with groups="smoke".
+  Use for a fast sanity gate (login + logout) before a full regression run.
+
+  Run with: mvn clean test -DsuiteXmlFile=testng-smoke.xml
+-->
+<suite name="OrangeHRM Smoke Suite" verbose="1" parallel="none">
+
+    <listeners>
+        <listener class-name="com.orangehrm.listeners.TestListener"/>
+        <listener class-name="com.orangehrm.listeners.RetryAnnotationTransformer"/>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+    </listeners>
+
+    <test name="Smoke Tests">
+        <groups>
+            <run>
+                <include name="smoke"/>
+            </run>
+        </groups>
+        <classes>
+            <class name="com.orangehrm.tests.EmployeeLifecycleTest"/>
+            <class name="com.orangehrm.tests.RoleBasedAccessTest"/>
+        </classes>
+    </test>
+
+</suite>

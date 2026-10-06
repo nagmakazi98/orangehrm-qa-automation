@@ -1,8 +1,9 @@
 {
-  "firstName": "Aarav",
-  "lastName": "Mehta",
-  "employeeId": "QA10245",
+  "_comment": "Base template for employee test data. firstName/lastName/employeeId are ALWAYS overwritten at runtime by DataFactory.randomEmployee(). Only updatedJobTitle and updatedEmploymentStatus are used as configurable defaults.",
+  "firstName": "AutoTest",
+  "lastName": "Template",
+  "employeeId": "TEMPLATE",
   "profilePicture": "src/test/resources/images/profile.png",
-  "updatedJobTitle": "Automation Tester",
+  "updatedJobTitle": "Software Engineer",
   "updatedEmploymentStatus": "Full-Time Permanent"
 }

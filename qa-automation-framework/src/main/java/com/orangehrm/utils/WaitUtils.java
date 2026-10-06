@@ -28,7 +28,8 @@ public class WaitUtils {
     public void waitForLoadersToDisappear() {
         try {
             if (!driver.findElements(loaders).isEmpty()) {
-                wait.until(ExpectedConditions.invisibilityOfElementLocated(loaders));
+                new WebDriverWait(driver, Duration.ofSeconds(3))
+                        .until(ExpectedConditions.invisibilityOfElementLocated(loaders));
             }
         } catch (Exception ignored) {
         }

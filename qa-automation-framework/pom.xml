@@ -23,7 +23,13 @@
         <restassured.version>5.4.0</restassured.version>
         <jackson.version>2.17.1</jackson.version>
         <log4j.version>2.23.1</log4j.version>
-        <aspectj.version>1.9.22</aspectj.version>
+        <suiteXmlFile>testng.xml</suiteXmlFile>
+        <!-- Runtime overrides (all can be passed as -D flags or env vars) -->
+        <browser>chrome</browser>
+        <headless>false</headless>
+        <env>qa</env>
+        <retry.count>1</retry.count>
+        <groups></groups>
     </properties>
 
     <dependencies>
@@ -116,19 +122,25 @@
                 <version>3.2.5</version>
                 <configuration>
                     <suiteXmlFiles>
-                        <suiteXmlFile>testng.xml</suiteXmlFile>
+                        <suiteXmlFile>${suiteXmlFile}</suiteXmlFile>
                     </suiteXmlFiles>
-                    <argLine>
-                        -javaagent:"${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar"
-                    </argLine>
+                    <!-- Forward CLI/CI system properties into the test JVM.
+                         ConfigReader reads these at priority-1 (System.getProperty). -->
+                    <systemPropertyVariables>
+                        <browser>${browser}</browser>
+                        <headless>${headless}</headless>
+                        <env>${env}</env>
+                        <retry.count>${retry.count}</retry.count>
+                    </systemPropertyVariables>
+                    <!-- Pass -Dgroups=smoke|regression|role to TestNG group filter.
+                         Empty string means no filter (run all tests in the suite). -->
+                    <groups>${groups}</groups>
+                    <!-- Ensure test failures propagate to Maven exit code -->
+                    <testFailureIgnore>false</testFailureIgnore>
+                    <!-- Print method-level timings to the console -->
+                    <reportFormat>plain</reportFormat>
+                    <useFile>false</useFile>
                 </configuration>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.aspectj</groupId>
-                        <artifactId>aspectjweaver</artifactId>
-                        <version>${aspectj.version}</version>
-                    </dependency>
-                </dependencies>
             </plugin>
 
             <!-- Allure Maven plugin - generates HTML report -->

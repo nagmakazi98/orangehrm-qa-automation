@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class EmployeeData {
 
     private String firstName;
+    private String middleName = "";
     private String lastName;
     private String employeeId;
     private String profilePicture;
@@ -22,6 +23,14 @@ public class EmployeeData {
 
     public void setFirstName(String firstName) {
         this.firstName = firstName;
+    }
+
+    public String getMiddleName() {
+        return middleName != null ? middleName : "";
+    }
+
+    public void setMiddleName(String middleName) {
+        this.middleName = middleName;
     }
 
     public String getLastName() {

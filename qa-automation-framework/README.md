@@ -1,648 +1,695 @@
-# OrangeHRM Employee Lifecycle — QA Automation Framework
+﻿# OrangeHRM QA Automation Framework
 
-A **Selenium + Java + TestNG** automation framework that executes an end-to-end
-**Employee Lifecycle Management** scenario against the public OrangeHRM demo site.
-
-> **Live demo site:** https://opensource-demo.orangehrmlive.com/
-> **API validation layer:** https://reqres.in (simulated, per assessment guidance)
-
----
-
-## Table of Contents
-
-1. [What This Framework Tests](#1-what-this-framework-tests)
-2. [Prerequisites](#2-prerequisites)
-3. [Project Structure](#3-project-structure)
-4. [One-Time Setup](#4-one-time-setup)
-5. [How to Run the Tests](#5-how-to-run-the-tests)
-6. [Viewing Reports](#6-viewing-reports)
-7. [Configuration Reference](#7-configuration-reference)
-8. [Test Case Details](#8-test-case-details)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Dependencies](#10-dependencies)
+[![QA Automation CI](https://github.com/nagmakazi98/orangehrm-qa-automation/actions/workflows/qa-automation.yml/badge.svg)](https://github.com/nagmakazi98/orangehrm-qa-automation/actions/workflows/qa-automation.yml)
+[![Java 11](https://img.shields.io/badge/Java-11-blue.svg)](https://www.oracle.com/java/)
+[![Selenium 4.21](https://img.shields.io/badge/Selenium-4.21.0-green.svg)](https://www.selenium.dev/)
+[![TestNG 7.10](https://img.shields.io/badge/TestNG-7.10.2-red.svg)](https://testng.org/)
+[![REST Assured 5.4](https://img.shields.io/badge/REST%20Assured-5.4.0-orange.svg)](https://rest-assured.io/)
 
 ---
 
-## 1. What This Framework Tests
+## 1. Project Overview
 
-The suite runs **7 ordered test cases** that together cover the full employee lifecycle:
+Enterprise-grade test automation framework for validating the OrangeHRM Human Resource Management application. The framework covers UI workflows, REST API contract validation, and role-based access control across two user personas (Admin and ESS).
 
-| # | Test Method | What It Does |
+**Application under test:** https://opensource-demo.orangehrmlive.com
+
+The framework is designed to run reliably against a shared public sandbox that is subject to concurrent access, periodic database resets, and variable network latency. Every design decision — from independent test setup to automatic retry — addresses the unique challenges that come with testing a live public demo environment.
+
+---
+
+## 2. Technology Stack
+
+| Component | Technology | Version |
 |---|---|---|
-| 1 | `testLogin` | Logs in as Admin and verifies the dashboard loads |
-| 2 | `testAddNewEmployee` | Fills the Add Employee form (name, ID, photo) and confirms redirect to Personal Details |
-| 3 | `testVerifyEmployeeCreated` | Searches PIM by Employee ID and confirms the record exists |
-| 4 | `testEditEmployeeInformation` | Opens the employee, updates Job Title + Employment Status, asserts success toast |
-| 5 | `testValidateEmployeeViaApi` | Posts the same data to the ReqRes API, updates it, and cross-checks name + job title |
-| 6 | `testDeleteEmployee` | Deletes the employee from PIM, verifies no records found, then deletes via API |
-| 7 | `testLogout` | Logs out and verifies the session is invalidated (protected URL redirects to login) |
-
-Each test **depends on the previous one** (`dependsOnMethods`), so they run in strict order
-and a failing step skips all downstream steps — matching a realistic manual QA flow.
-
----
-
-## 2. Prerequisites
-
-Make sure **all** of the following are installed before you run anything.
-
-### Required Software
-
-| Tool | Version | How to verify |
-|---|---|---|
-| **JDK** | 11 or later | `java -version` |
-| **Maven** | 3.8 or later | `mvn -version` |
-| **Google Chrome** | Latest stable | Open Chrome → `chrome://settings/help` |
-| **Internet access** | — | Must reach `opensource-demo.orangehrmlive.com` and `reqres.in` |
-
-> **ChromeDriver** is managed automatically by **WebDriverManager** — you do **not** need to
-> download or set it up manually.
-
-### Check your setup (run these in a terminal)
-
-```bash
-java -version
-# Expected: java version "11.x.x" or higher
-
-mvn -version
-# Expected: Apache Maven 3.8.x or higher
-```
-
-If either command fails, install the tool and add it to your system `PATH`.
+| Language | Java | 11 |
+| Test runner | TestNG | 7.10.2 |
+| Browser automation | Selenium WebDriver | 4.21.0 |
+| Driver management | WebDriverManager | 5.8.0 |
+| API testing | REST Assured | 5.4.0 |
+| JSON parsing | Jackson Databind | 2.17.1 |
+| HTML reporting | ExtentReports (Spark) | 5.1.1 |
+| Allure reporting | Allure TestNG adapter | 2.27.0 |
+| Logging | Log4j2 | 2.23.1 |
+| Video capture | Monte Screen Recorder | 0.7.7.0 |
+| Build tool | Apache Maven | 3.8+ |
+| CI/CD | GitHub Actions | — |
 
 ---
 
-## 3. Project Structure
+## 3. Architecture
 
-```
+### Execution Flow
+
+`
+Test Method
+  │
+  ├─► @BeforeMethod  ──► API: create employee precondition (where needed)
+  │
+  ├─► Page Object Layer  ──►  Selenium WebDriver  ──►  OrangeHRM UI
+  │        │
+  │        └─► WaitUtils (explicit waits, no Thread.sleep)
+  │
+  ├─► API Client Layer   ──►  REST Assured  ──►  OrangeHRM v2 REST API
+  │        │
+  │        └─► Session cookies shared from active WebDriver instance
+  │
+  ├─► Assertions (TestNG Assert)
+  │
+  ├─► @AfterMethod(alwaysRun=true)  ──►  API: delete employee (cleanup)
+  │
+  └─► TestListener ──►  ExtentReports + Allure + Log4j2
+                        (screenshot attached on failure)
+`
+
+### CI/CD Flow
+
+`
+GitHub Push / PR / workflow_dispatch
+  │
+  ├─► Smoke Job (PR only, Chrome)  ──►  testng-smoke.xml
+  │
+  └─► Test Matrix Job (Chrome + Firefox, parallel)
+        │
+        ├─► JDK 11 setup + Maven cache
+        ├─► Browser + WebDriver binary setup
+        ├─► Xvfb virtual display (:99, 1920x1080)
+        ├─► mvn clean test -Denv=qa -Dheadless=true -Dbrowser=<browser>
+        └─► Upload artifacts (Allure results, Extent HTML, screenshots, logs, videos)
+`
+
+---
+
+## 4. Framework Structure
+
+`
 qa-automation-framework/
-├── pom.xml                          ← Maven build file (dependencies + plugins)
-├── testng.xml                       ← TestNG suite: listeners, test class, order
-├── README.md
-│
-├── src/
-│   ├── main/java/com/orangehrm/
-│   │   ├── base/
-│   │   │   ├── DriverFactory.java   ← Creates/destroys WebDriver (Thread-safe)
-│   │   │   └── BaseTest.java        ← @BeforeClass / @AfterClass / @AfterSuite hooks
-│   │   ├── pages/                   ← Page Object Model
-│   │   │   ├── LoginPage.java
-│   │   │   ├── DashboardPage.java
-│   │   │   ├── PimPage.java         ← Employee list: search, open, delete
-│   │   │   ├── AddEmployeePage.java ← Add Employee form + photo upload
-│   │   │   └── PersonalDetailsPage.java ← Job tab: edit Title & Status
-│   │   └── utils/
-│   │       ├── ConfigReader.java    ← Reads config.properties
-│   │       ├── JsonDataReader.java  ← Reads JSON test data via Jackson
-│   │       ├── EmployeeData.java    ← POJO matching employee.json
-│   │       ├── WaitUtils.java       ← Explicit waits (no Thread.sleep)
-│   │       ├── ApiHelper.java       ← REST Assured API calls (ReqRes)
-│   │       └── ScreenRecorderUtil.java ← Monte Media video capture
-│   │   └── listeners/
-│   │       └── TestListener.java    ← ExtentReports + screenshot on failure
-│   │
-│   └── test/
-│       ├── java/com/orangehrm/tests/
-│       │   └── EmployeeLifecycleTest.java  ← The 7-step end-to-end test
-│       └── resources/
-│           ├── config.properties    ← All config: URL, browser, credentials
-│           ├── testdata/
-│           │   └── employee.json    ← Test data: names, IDs, job titles
-│           └── images/
-│               └── profile.png     ← Sample profile picture for upload
-│
-├── reports/
-│   ├── ExtentReport.html            ← Generated HTML report after each run
-│   └── videos/                     ← Screen recordings (.avi) of each run
-│
-└── test-output/
-    └── screenshots/                ← Auto-captured screenshots on failure
-```
+├── .github/
+│   └── workflows/
+│       └── qa-automation.yml           # GitHub Actions CI/CD pipeline
+├── pom.xml                             # Maven build, dependencies, Surefire config
+├── testng.xml                          # Full regression suite (all groups)
+├── testng-smoke.xml                    # Smoke suite (group filter: smoke)
+└── src/
+    ├── main/
+    │   ├── java/com/orangehrm/
+    │   │   ├── api/
+    │   │   │   ├── OrangeHrmApiClient.java     # OrangeHRM v2 REST API client
+    │   │   │   └── models/                     # Strongly-typed Jackson DTO models
+    │   │   │       ├── EmployeeListResponse.java
+    │   │   │       ├── EmployeeSummaryDto.java
+    │   │   │       ├── PersonalDetailsResponse.java
+    │   │   │       ├── PersonalDetailsDto.java
+    │   │   │       ├── JobDetailsResponse.java
+    │   │   │       ├── JobDetailsDto.java
+    │   │   │       ├── JobTitleDto.java
+    │   │   │       └── EmploymentStatusDto.java
+    │   │   ├── base/
+    │   │   │   ├── BaseTest.java               # Suite/class lifecycle hooks, driver wiring
+    │   │   │   └── DriverFactory.java          # ThreadLocal WebDriver factory
+    │   │   ├── pages/                          # Page Objects (all extend BasePage)
+    │   │   │   ├── BasePage.java               # Shared wait helpers, JS utilities, logging
+    │   │   │   ├── LoginPage.java
+    │   │   │   ├── DashboardPage.java
+    │   │   │   ├── PimPage.java
+    │   │   │   ├── AddEmployeePage.java
+    │   │   │   └── PersonalDetailsPage.java
+    │   │   ├── listeners/
+    │   │   │   ├── TestListener.java            # ExtentReports + Allure + screenshot wiring
+    │   │   │   ├── RetryAnalyzer.java           # Configurable retry (IRetryAnalyzer)
+    │   │   │   └── RetryAnnotationTransformer.java  # Applies retry to all @Test methods
+    │   │   └── utils/
+    │   │       ├── ConfigReader.java            # 4-tier property resolution
+    │   │       ├── SessionManager.java          # Multi-user login/logout helpers
+    │   │       ├── ApiHelper.java               # Backward-compatible OrangeHrmApiClient adapter
+    │   │       ├── DataFactory.java             # Runtime unique employee data generator
+    │   │       ├── EmployeeData.java            # Employee POJO
+    │   │       ├── JsonDataReader.java          # Jackson-backed JSON loader (classpath + FS)
+    │   │       ├── WaitUtils.java               # Explicit wait utilities (zero Thread.sleep)
+    │   │       └── ScreenRecorderUtil.java      # Monte Media video capture
+    │   └── resources/
+    │       └── log4j2.xml                      # Log4j2: console + file appenders
+    └── test/
+        ├── java/com/orangehrm/tests/
+        │   ├── EmployeeLifecycleTest.java       # Employee CRUD lifecycle (7 tests)
+        │   └── RoleBasedAccessTest.java         # RBAC: Admin vs ESS persona (3 tests)
+        └── resources/
+            ├── config.properties               # Framework config (browser, timeouts, URLs)
+            ├── config-qa.properties            # QA environment overrides
+            ├── config-dev.properties           # Dev environment overrides
+            ├── config-stage.properties         # Stage environment overrides
+            ├── testdata.properties             # Test data defaults (name pool, job title, ID prefix)
+            ├── allure.properties               # Allure results directory
+            ├── testdata/
+            │   └── employee.json              # JSON template (identity fields overwritten at runtime)
+            └── images/
+                └── profile.png               # Avatar image for upload tests
+`
 
 ---
 
-## 4. One-Time Setup
+## 5. Test Coverage
 
-### Step 1 — Clone the repository
+### Employee Lifecycle (EmployeeLifecycleTest)
 
-```bash
-git clone <your-repo-url>
-cd qa-automation-framework/qa-automation-framework
-```
+Each test method is fully independent. Setup and cleanup use the REST API.
 
-### Step 2 — Download all dependencies
+| # | Method | Groups | What it validates |
+|---|---|---|---|
+| 1 | 	estLogin | smoke, egression, ui | Valid credentials authenticate; Dashboard URL is reached |
+| 2 | 	estAddNewEmployee | egression, ui | PIM Add Employee form submission; API cross-validates firstName/lastName/employeeId |
+| 3 | 	estVerifyEmployeeCreated | egression, ui | API-created employee is findable in PIM search grid |
+| 4 | 	estEditEmployeeInformation | egression, ui | Job Title and Employment Status updates persist; API reads updated values back |
+| 5 | 	estValidateEmployeeViaApi | egression, pi | API-created employee is verifiable via /personal-details and /pim/employees list |
+| 6 | 	estDeleteEmployee | egression, ui | Deleted employee disappears from PIM grid; API returns non-200 for deleted record |
+| 7 | 	estLogout | smoke, egression, ui | Logout invalidates session; direct Dashboard URL redirects back to Login |
 
-```bash
-mvn clean install -DskipTests
-```
+### Role-Based Access Control (RoleBasedAccessTest)
 
-This downloads Selenium, TestNG, REST Assured, Allure, and all other libraries into your
-local Maven cache (`~/.m2`). **Run this only once** (or after changing `pom.xml`).
+| # | Method | Groups | What it validates |
+|---|---|---|---|
+| 1 | 	estAdminCanAccessPimAndEmployeeManagement | smoke, egression, ole, ui | Admin sees PIM menu, navigates to PIM, sees Add/Search buttons |
+| 2 | 	estEssUserRestrictedFromPimAndAdminMenus | egression, ole, ui | ESS user cannot see PIM or Admin navigation menus |
+| 3 | 	estEssUserDirectUrlAccessToProtectedPimDenied | egression, ole, ui | Direct URL navigation to PIM employee list is blocked for ESS persona |
 
-Expected output at the end:
-```
-[INFO] BUILD SUCCESS
-```
+---
 
-### Step 3 — Verify config.properties
+## 6. API Validation
 
-Open `src/test/resources/config.properties` and confirm these values:
+The framework integrates directly with OrangeHRM's internal REST API (/web/index.php/api/v2/) using REST Assured.
 
-```properties
-# OrangeHRM demo site
+### Session Synchronization
+
+OrangeHrmApiClient extracts authenticated session cookies directly from the active Selenium WebDriver instance (driver.manage().getCookies()). This means API calls execute under the exact same authenticated identity as the browser session — no separate login is required.
+
+If the session cookie is absent or expired (HTTP 401), the client automatically re-authenticates via the POST /web/index.php/auth/validate endpoint.
+
+### Endpoints Used
+
+| Method | Endpoint | Used For |
+|---|---|---|
+| POST | /web/index.php/api/v2/pim/employees | Create employee (test setup) |
+| GET | /web/index.php/api/v2/pim/employees | Search employee list |
+| GET | /web/index.php/api/v2/pim/employees/{empNumber}/personal-details | Read and cross-validate name, employeeId |
+| GET | /web/index.php/api/v2/pim/employees/{empNumber}/job-details | Read and cross-validate job title |
+| DELETE | /web/index.php/api/v2/pim/employees (bulk by ids) | Delete employee (test cleanup) |
+| POST | /web/index.php/api/v2/admin/users | Create ESS test user (RBAC setup) |
+| DELETE | /web/index.php/api/v2/admin/users (bulk by ids) | Delete ESS test user (RBAC cleanup) |
+
+### API Limitation
+
+Profile picture upload is not supported by the OrangeHRM v2 REST API. The 	estAddNewEmployee test uploads the avatar through the UI only.
+
+---
+
+## 7. Role-Based Testing
+
+The RBAC suite validates two distinct user personas.
+
+**Admin persona** — created by logging in with the configured admin credentials. Asserts:
+- PIM navigation menu is visible
+- /pim/viewEmployeeList URL is accessible
+- Add Employee button and Search button are present
+
+**ESS persona** — a dedicated ESS user is provisioned at @BeforeClass via the API (POST /web/index.php/api/v2/admin/users, userRoleId=2) linked to a freshly API-created employee. If API provisioning fails (demo throttling), the configured ess.username / ess.password fallback is used. Asserts:
+- PIM menu is NOT visible
+- Admin menu is NOT visible
+- Direct navigation to /pim/viewEmployeeList does NOT render the employee table or Add button
+
+Both the ESS user and the linked employee are deleted via API in @AfterClass(alwaysRun=true).
+
+---
+
+## 8. Test Data Strategy
+
+### Four-Layer Data Separation
+
+| Layer | File | Contains |
+|---|---|---|
+| Framework config | config.properties / config-<env>.properties | Browser, headless flag, timeouts, base URLs |
+| Credentials | config.properties + environment variables | login.username, login.password, ess.username, ess.password |
+| Test data defaults | 	estdata.properties | Job title, employment status, first-name pool, ID prefix |
+| Generated runtime data | DataFactory (in-memory) | Unique first name, last name, employee ID — never stored to disk |
+
+### Uniqueness Strategy
+
+DataFactory.randomEmployee() generates per-test unique records:
+
+`
+First name  → random pick from configurable pool (Alex, Jordan, Morgan, Taylor, …)
+Last name   → "Test" + 6-character UUID hex suffix (e.g. "Test3fa2c1")
+Employee ID → configurable prefix (default "A") + 8-digit zero-padded atomic counter
+              total length = 9 characters — within OrangeHRM's field limit
+              e.g. "A01234567"
+`
+
+- The UUID hex suffix in the last name is process-independent, so parallel JVM forks never collide.
+- The atomic counter ensures ordering within a single JVM and is seeded from the millisecond clock mod 99,000,000 to diverge across runs.
+- The first-name pool produces readable output in reports instead of machine-generated strings.
+
+### fromJson() Is Safe for Parallel Use
+
+DataFactory.fromJson() loads 	estdata/employee.json as a template for default values (job title, profile picture path), then **always overwrites** irstName, lastName, and employeeId with andomEmployee() values before returning the object. The JSON file can never cause ID collisions.
+
+### Runtime Overrides
+
+`ash
+# Change job title used in Edit Employee tests
+mvn test -Dtestdata.employee.updatedJobTitle="Automation Tester"
+
+# Change first-name pool
+mvn test -Dtestdata.firstname.pool="Sam,Alex,Lee"
+
+# Change employee ID prefix
+mvn test -Dtestdata.employeeid.prefix=T
+`
+
+---
+
+## 9. Environment Configuration
+
+Configuration is resolved in strict priority order:
+
+`
+1. -D system property (highest — always wins in CI and CLI)
+2. Environment variable (ORANGEHRM_USERNAME, ORANGEHRM_PASSWORD, etc.)
+3. config-<env>.properties (selected by -Denv=qa|dev|stage)
+4. config.properties (base fallback)
+5. Coded default in ConfigReader (lowest)
+`
+
+### Available Properties (config.properties)
+
+`properties
+# Application
+env=qa
 base.url=https://opensource-demo.orangehrmlive.com/
-
-# Browser to use: chrome | firefox
 browser=chrome
-
-# Set true for headless/CI runs, false for visible browser
 headless=false
+implicit.wait.seconds=10
+explicit.wait.seconds=20
+page.load.timeout.seconds=30
 
-# Login credentials (shared demo site defaults)
+# API
+api.base.url=https://opensource-demo.orangehrmlive.com
+
+# Credentials (override via env vars in CI — never commit real secrets)
 login.username=Admin
 login.password=admin123
+ess.username=linda.anderson
+ess.password=admin123
 
-# API validation base URL (ReqRes public test API)
-api.base.url=https://reqres.in/api
+# Paths
+image.profile.path=src/test/resources/images/profile.png
 
-# Timeout in seconds for explicit waits
-explicit.wait.seconds=15
-```
+# Reporting
+screenshot.dir=test-output/screenshots
+video.dir=reports/videos
+extent.report.path=reports/ExtentReport.html
 
-> You should not need to change anything here for a standard local run.
+# Retry (0 = disabled, max 3)
+retry.count=1
+`
 
----
+### Credential Environment Variables (CI)
 
-## 5. How to Run the Tests
-
-Open a terminal **inside the project directory**
-(`qa-automation-framework/qa-automation-framework`) for all commands below.
-
-### Run the full suite (recommended)
-
-```bash
-mvn clean test
-```
-
-This will:
-1. Compile all source code
-2. Launch Chrome browser
-3. Execute all 7 test cases in order
-4. Generate reports in `reports/ExtentReport.html`
-5. Save Allure raw results to `target/allure-results/`
-
-**Expected output:**
-
-```
--------------------------------------------------------
- T E S T S
--------------------------------------------------------
-Running Employee Lifecycle Management
-Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
-[INFO] BUILD SUCCESS
-```
-
----
-
-### Run in headless mode (no browser window)
-
-```bash
-mvn clean test -Dheadless=true
-```
-
-Use this for CI/CD pipelines or if you want tests to run in the background without a
-visible browser window.
-
----
-
-### Run a single specific test method
-
-```bash
-mvn clean test -Dtest=EmployeeLifecycleTest#testLogin
-```
-
-Replace `testLogin` with any of these test method names:
-- `testLogin`
-- `testAddNewEmployee`
-- `testVerifyEmployeeCreated`
-- `testEditEmployeeInformation`
-- `testValidateEmployeeViaApi`
-- `testDeleteEmployee`
-- `testLogout`
-
-> **Note:** Because tests depend on each other (`dependsOnMethods`), running a downstream
-> test in isolation may skip or fail. Run from the beginning for a complete flow.
-
----
-
-### Run via IntelliJ IDEA
-
-1. Open the project (`File → Open → select the `qa-automation-framework` folder`)
-2. Wait for Maven to sync (progress bar in the bottom right)
-3. Right-click `testng.xml` → **Run 'testng.xml'**
-
-OR right-click `EmployeeLifecycleTest.java` → **Run 'EmployeeLifecycleTest'**
-
----
-
-## 6. Viewing Reports
-
-### ExtentReports (HTML — opens instantly after run)
-
-```bash
-# Open this file in any browser after a run:
-reports/ExtentReport.html
-```
-
-This file is generated automatically after every `mvn clean test`. It shows:
-- Pass / Fail status per test
-- Execution timeline
-- Screenshots embedded on failure
-
----
-
-### Allure Report (interactive, with steps and severity)
-
-**Generate and open in one command:**
-```bash
-mvn allure:serve
-```
-
-Or — generate only (no browser open):
-```bash
-mvn allure:report
-# Then open: target/site/allure-maven-plugin/index.html
-```
-
-The Allure report shows:
-- Test severity levels (Blocker / Critical / Normal)
-- Story and Epic groupings
-- Step-by-step breakdown
-- Embedded screenshots on failure
-
----
-
-### Screen Recording
-
-When running with `headless=false` (visible browser), a video (`.avi`) of the
-entire test run is saved to:
-```
-reports/videos/EmployeeLifecycleSuite.avi
-```
-
-On headless environments without a display, video capture is automatically skipped
-with a console warning — the tests still complete normally.
-
----
-
-### Screenshots on Failure
-
-If any test fails, a screenshot is automatically taken and saved to:
-```
-test-output/screenshots/<TestName>_<timestamp>.png
-```
-
-The screenshot is also embedded directly in both the Extent and Allure reports.
-
----
-
-## 7. Configuration Reference
-
-All settings are in `src/test/resources/config.properties`:
-
-| Property | Default Value | Description |
-|---|---|---|
-| `base.url` | `https://opensource-demo.orangehrmlive.com/` | OrangeHRM demo site URL |
-| `browser` | `chrome` | Browser to use: `chrome` or `firefox` |
-| `headless` | `false` | Run without a visible window (`true` for CI) |
-| `login.username` | `Admin` | OrangeHRM login username |
-| `login.password` | `admin123` | OrangeHRM login password |
-| `api.base.url` | `https://reqres.in/api` | Base URL for API validation layer |
-| `explicit.wait.seconds` | `15` | Timeout for all WebDriverWait calls |
-
-**Test data** is in `src/test/resources/testdata/employee.json`:
-
-```json
-{
-  "firstName": "Nagma",
-  "lastName": "QATest",
-  "employeeId": "QA10245",
-  "profilePicture": "src/test/resources/images/profile.png",
-  "updatedJobTitle": "Software Engineer",
-  "updatedEmploymentStatus": "Full-Time Permanent"
-}
-```
-
-> The Employee ID is overridden at runtime with a unique value (`QA` + timestamp) to
-> avoid conflicts with other users on the shared demo site.
-
----
-
-## 8. Test Case Details
-
-### TC-1: Login (`testLogin`)
-- Navigates to the base URL
-- Asserts the login form is present
-- Enters `Admin` / `admin123`
-- Asserts the Dashboard header is displayed and URL contains `/dashboard`
-
-### TC-2: Add New Employee (`testAddNewEmployee`)
-- Navigates to PIM → Add Employee
-- Fills: First Name, Last Name, Employee ID, uploads profile photo
-- Clicks Save
-- Asserts redirect to Personal Details page (URL check + header check)
-
-### TC-3: Verify Employee Created (`testVerifyEmployeeCreated`)
-- Returns to PIM Employee List
-- Searches by the generated Employee ID
-- Asserts the employee row appears in the results grid
-
-### TC-4: Edit Employee Information (`testEditEmployeeInformation`)
-- Opens the employee record from search results
-- Navigates to the **Job** tab
-- Selects a new Job Title and Employment Status from dropdowns
-- Clicks Save
-- Asserts the green success toast notification appears
-
-### TC-5: Validate via API (`testValidateEmployeeViaApi`)
-- Calls `POST /users` on ReqRes with the employee's name and job title → expects **201**
-- Calls `PUT /users/{id}` to update → expects **200**
-- Cross-checks that `name` and `job` fields in the API response match what was set in the UI
-- Simulates API-UI consistency validation (ReqRes used per assessment guidance since
-  the OrangeHRM demo has no open REST API without OAuth)
-
-### TC-6: Delete Employee (`testDeleteEmployee`)
-- Searches for the employee in PIM by Employee ID
-- Deletes the record from the UI (trash icon or checkbox + Delete Selected)
-- Confirms the dialog
-- Searches again and asserts "No Records Found"
-- Calls `DELETE /users/{id}` on ReqRes → expects **204**
-
-### TC-7: Logout (`testLogout`)
-- Clicks the user dropdown → Logout
-- Asserts the login page is displayed again
-- Navigates directly to the dashboard URL and asserts it redirects back to login
-  (confirms the session is properly invalidated)
-
----
-
-## 9. Troubleshooting
-
-### `BUILD FAILURE` on `mvn clean install`
-- Check your Java and Maven versions: `java -version` and `mvn -version`
-- Ensure internet access is available (Maven downloads from Maven Central)
-- Delete `target/` and retry: `mvn clean install -DskipTests`
-
-### Chrome fails to launch
-- Ensure Google Chrome is installed and up to date
-- WebDriverManager automatically downloads a matching ChromeDriver. If it fails due to
-  network restrictions, manually download ChromeDriver from https://chromedriver.chromium.org
-  and place it on your `PATH`.
-- Try running headless: `mvn clean test -Dheadless=true`
-
-### `TimeoutException` during test execution
-- The OrangeHRM demo site is a shared sandbox and can be slow
-- Increase the wait timeout in `config.properties`: `explicit.wait.seconds=30`
-- Check that the site is accessible: https://opensource-demo.orangehrmlive.com
-
-### TC-2 fails: "Personal Details page did not load"
-- The demo site can be slow to redirect after saving a new employee
-- Increase `explicit.wait.seconds` to `30` or higher
-- Verify the site is not in maintenance mode
-
-### TC-3 fails: "Employee not found in PIM"
-- The Employee ID may already exist (shared demo site). The test generates a unique ID
-  at runtime, but collisions are possible. Re-run the test — it generates a fresh ID each time.
-
-### TC-5 fails: API status code mismatch
-- ReqRes is a public free API — it may occasionally be slow or unavailable
-- Check https://reqres.in is reachable from your machine
-- This test is isolated from the OrangeHRM UI state and does not affect TC-6 or TC-7
-
-### Allure report is empty or missing
-- Make sure you ran `mvn clean test` first to generate `target/allure-results/`
-- Then run `mvn allure:serve`
-
----
-
-## 10. Dependencies
-
-| Library | Version | Purpose |
-|---|---|---|
-| Java | 11 | Language |
-| Maven | 3.8+ | Build & dependency management |
-| Selenium WebDriver | 4.21.0 | Browser automation |
-| WebDriverManager (Bonigarcia) | 5.8.0 | Auto-manages ChromeDriver/GeckoDriver binaries |
-| TestNG | 7.10.2 | Test runner, ordering, assertions, suite XML |
-| ExtentReports (Spark) | 5.1.1 | Standalone HTML report (`reports/ExtentReport.html`) |
-| Allure TestNG | 2.27.0 | Rich interactive HTML report with steps/severity |
-| REST Assured | 5.4.0 | API request/response validation layer |
-| Jackson Databind | 2.17.1 | Parses `employee.json` into `EmployeeData` POJO |
-| Log4j2 | 2.23.1 | Application logging |
-| Monte Screen Recorder | 0.7.7.0 | Desktop video capture during test run |
-| AspectJ Weaver | 1.9.22 | Required by Allure for bytecode instrumentation |
-
----
-
-## Quick Reference Card
-
-```bash
-# 1. One-time setup — download all dependencies
-mvn clean install -DskipTests
-
-# 2. Run all 7 tests (visible browser)
-mvn clean test
-
-# 3. Run headless (no browser window, good for CI)
-mvn clean test -Dheadless=true
-
-# 4. Run a single test method
-mvn clean test -Dtest=EmployeeLifecycleTest#testLogin
-
-# 5. Generate + open Allure report in browser
-mvn allure:serve
-
-# 6. View Extent report — open this file in a browser
-reports/ExtentReport.html
-```
-
----
-
-## 1. Scenario Automated
-
-| Step | Action |
-|------|--------|
-| 1 | Login with valid credentials (`Admin` / `admin123`) and verify the dashboard loads |
-| 2 | Add a new employee via **PIM > Add Employee** using data-driven input (JSON), including First Name, Last Name, Employee Id, and a profile picture upload |
-| 3 | Search the employee by Employee Id, edit **Job Title** and **Employment Status**, verify success |
-| 4 | Validate employee data via an API layer and cross-check it against the UI |
-| 5 | Delete the employee from the UI, verify removal via both UI and API |
-| 6 | Logout and confirm the session is invalidated |
-
-> **Note on the API step:** the public OrangeHRM demo instance does not expose an open REST API
-> for employee CRUD without additional OAuth app registration that's outside the scope of a
-> shared demo/sandbox account. As explicitly permitted by the assessment ("*or simulate API with
-> any public test API like ReqRes*"), `ApiHelper` talks to **https://reqres.in** to exercise and
-> assert the create/update/delete/response-validation layer end-to-end. All API calls are isolated
-> in `ApiHelper` behind a single `api.base.url` config value — pointing this at a real OrangeHRM
-> API host later requires no test-code changes, only adjusting the JSON field mapping.
-
----
-
-## 2. Framework Structure
-
-```
-qa-automation-framework/
-├── pom.xml                                # Maven dependencies & build/report plugins
-├── testng.xml                             # TestNG suite definition + listeners
-├── README.md
-├── src/
-│   ├── main/java/com/orangehrm/
-│   │   ├── base/
-│   │   │   ├── DriverFactory.java         # Thread-safe WebDriver creation (Chrome/Firefox)
-│   │   │   └── BaseTest.java              # Shared TestNG lifecycle hooks
-│   │   ├── pages/                         # Page Object Model
-│   │   │   ├── LoginPage.java
-│   │   │   ├── DashboardPage.java
-│   │   │   ├── PimPage.java               # Employee List: search / delete / navigate to Add
-│   │   │   ├── AddEmployeePage.java       # Add Employee form incl. picture upload
-│   │   │   └── PersonalDetailsPage.java   # Employee profile / Job tab (edit Job Title & Status)
-│   │   ├── utils/
-│   │   │   ├── ConfigReader.java          # Reads config.properties
-│   │   │   ├── JsonDataReader.java        # Generic Jackson-based JSON reader
-│   │   │   ├── EmployeeData.java          # POJO for data-driven employee.json
-│   │   │   ├── WaitUtils.java             # Centralized explicit waits
-│   │   │   ├── ApiHelper.java             # REST Assured API layer / UI-API cross-check
-│   │   │   └── ScreenRecorderUtil.java    # Monte Media screen recorder (video of test run)
-│   │   └── listeners/
-│   │       └── TestListener.java          # ExtentReports + Allure wiring, screenshot-on-failure
-│   └── test/
-│       ├── java/com/orangehrm/tests/
-│       │   └── EmployeeLifecycleTest.java # The 7-step end-to-end test (Allure-annotated)
-│       └── resources/
-│           ├── config.properties          # Base URL, browser, timeouts, credentials, API URL
-│           ├── testdata/employee.json     # Data-driven employee payload
-│           └── images/profile.png         # Sample profile picture used for upload
-├── reports/
-│   ├── ExtentReport.html                  # Generated after a run
-│   └── videos/                            # Generated screen recordings of the run
-└── test-output/
-    └── screenshots/                       # Auto-captured screenshots on test failure
-```
-
-**Design principles applied:**
-- **Page Object Model** — every page's locators + actions live in one class; tests never touch
-  a `By` locator directly.
-- **Fluent, reusable methods** — page objects return the next logical page object (e.g.
-  `loginAs()` returns `DashboardPage`), keeping test code readable as a linear story.
-- **Data-driven** — employee data lives in `employee.json`, not hardcoded in the test.
-- **Centralized config & waits** — `ConfigReader` and `WaitUtils` avoid duplicated boilerplate
-  and magic strings/timeouts scattered across page objects.
-- **Meaningful assertions** — every `Assert` carries a descriptive failure message explaining
-  *what* was expected and *why* it matters.
-- **Thread-safe driver management** — `DriverFactory` uses a `ThreadLocal<WebDriver>`, so the
-  suite is ready for parallel execution if the suite grows.
-
----
-
-## 3. Dependencies Used
-
-| Tool / Library | Purpose |
+| Environment Variable | Maps To |
 |---|---|
-| Java 11 | Language |
-| Maven | Build & dependency management |
-| Selenium WebDriver 4.21 | Browser automation |
-| WebDriverManager (Bonigarcia) | Auto-downloads/manages browser driver binaries |
-| TestNG 7.10 | Test runner: annotations, `dependsOnMethods`, assertions, suite XML |
-| ExtentReports 5.1 (Spark reporter) | Standalone HTML report (`reports/ExtentReport.html`) |
-| Allure TestNG 2.27 | Rich HTML report with steps/severity/attachments |
-| REST Assured 5.4 | API request/response layer for the API-validation step |
-| Jackson Databind | Parses `employee.json` into a POJO for data-driven testing |
-| Log4j2 | Logging |
-| Monte Screen Recorder | Captures a video (`.avi`) of the desktop during the test run |
+| ORANGEHRM_USERNAME | login.username |
+| ORANGEHRM_PASSWORD | login.password |
+| ORANGEHRM_ESS_USERNAME | ess.username |
+| ORANGEHRM_ESS_PASSWORD | ess.password |
+
+Set these in **GitHub → Repository → Settings → Secrets and variables → Actions**.
 
 ---
 
-## 4. Setup Instructions
+## 10. Running Tests
 
 ### Prerequisites
-- JDK 11 or later (`java -version`)
-- Maven 3.8+ (`mvn -version`)
-- Google Chrome (or Firefox) installed locally
-- Internet access to reach `opensource-demo.orangehrmlive.com` and `reqres.in`
 
-### Install
-```bash
-git clone <your-repo-url>
-cd qa-automation-framework
-mvn clean install -DskipTests
-```
-`WebDriverManager` handles the ChromeDriver/GeckoDriver binary automatically — no manual driver
-download is needed.
+- Java 11+
+- Maven 3.8+
+- Chrome or Firefox installed (WebDriverManager downloads the matching driver binary automatically)
 
-### Configuration
-All environment values live in `src/test/resources/config.properties`:
-```properties
-base.url=https://opensource-demo.orangehrmlive.com/
-browser=chrome          # chrome | firefox
-headless=false          # set true for CI
-login.username=Admin
-login.password=admin123
-api.base.url=https://reqres.in/api
-```
+### Full Regression Suite
 
----
-
-## 5. How to Run the Tests
-
-### Run the full suite (Maven + TestNG)
-```bash
+`ash
 mvn clean test
-```
-This uses `testng.xml`, which registers `TestListener` (ExtentReports) and `AllureTestNg`
-(Allure results) automatically.
+`
 
-### Run headless (e.g. CI)
-```bash
+### Full Suite — Headless
+
+`ash
 mvn clean test -Dheadless=true
-```
-*(or set `headless=true` directly in `config.properties`)*
+`
 
-### View the ExtentReports HTML report
-Open directly after the run — no extra command needed:
-```
-reports/ExtentReport.html
-```
+### Smoke Suite Only
 
-### Generate & view the Allure HTML report
-```bash
-mvn allure:report      # builds target/site/allure-maven-plugin from target/allure-results
-mvn allure:serve       # builds AND opens the interactive report in your browser
-```
+`ash
+mvn clean test -DsuiteXmlFile=testng-smoke.xml -Dheadless=true
+`
 
-### Video of the run
-If running with a visible display (`headless=false`), a screen recording is saved to:
-```
-reports/videos/
-```
-On headless/CI environments without a display, video capture is automatically skipped (logged
-to console) so the suite still completes — use a screen recorder if you need a video from a
-headless pipeline instead.
+### Run by Group
 
-### Screenshots on failure
-Any failed test step is automatically captured to `test-output/screenshots/` and embedded in
-both the Extent and Allure reports.
+`ash
+# Smoke tests (login + logout + admin access)
+mvn clean test -Dgroups=smoke
+
+# Full regression
+mvn clean test -Dgroups=regression
+
+# API validation tests only
+mvn clean test -Dgroups=api
+
+# Role-based access tests only
+mvn clean test -Dgroups=role
+
+# Combine groups
+mvn clean test -Dgroups="regression,api"
+`
+
+### Cross-Browser
+
+`ash
+# Firefox (headless)
+mvn clean test -Dbrowser=firefox -Dheadless=true
+
+# Chrome (headless)
+mvn clean test -Dbrowser=chrome -Dheadless=true
+`
+
+> **Note:** Only chrome and irefox are supported. Edge is not wired in DriverFactory.
+
+### Against a Different Environment
+
+`ash
+mvn clean test -Denv=qa
+mvn clean test -Denv=stage
+mvn clean test -Denv=dev
+`
+
+### Run a Single Test Class or Method
+
+`ash
+mvn clean test -Dtest=EmployeeLifecycleTest
+mvn clean test -Dtest=RoleBasedAccessTest
+mvn clean test -Dtest=EmployeeLifecycleTest#testAddNewEmployee
+`
+
+> Note: -Dtest= uses Surefire method filtering. The TestNG suite XML listeners (retry, Allure) are still active because they are also declared via @Listeners on BaseTest.
+
+### CI Maven Command (as used in GitHub Actions)
+
+`ash
+mvn clean test \
+  -Denv=qa \
+  -Dheadless=true \
+  -Dbrowser=chrome \
+  -DsuiteXmlFile=testng.xml \
+  --no-transfer-progress -B
+`
 
 ---
 
-## 6. Notes & Assumptions
+## 11. TestNG Groups
 
-- The OrangeHRM demo site is a **shared public sandbox** — data can be reset/modified by other
-  users at any time, and Employee Ids may occasionally collide. The test uses a distinctive
-  Employee Id (`QA10245`) from `employee.json` to minimize collisions; change it if a run fails
-  because the Id is already taken.
-- Selenium was chosen (per the assessment's "Use Selenium with Java" instruction) over
-  Playwright, with TestNG as the runner and Page Object Model for maintainability.
-  ("oSelenium" in the brief is read as "Use Selenium".)
-- The API validation step uses ReqRes (a public test API), per the assessment's explicit
-  fallback option, since the demo OrangeHRM instance has no open API without OAuth setup.
+Tests are tagged with groups at the @Test annotation level. Groups can be selected without editing any Java source file.
+
+| Group | Tests | Purpose |
+|---|---|---|
+| smoke | 	estLogin, 	estLogout, 	estAdminCanAccessPimAndEmployeeManagement | Fast sanity gate — run on every PR before full matrix |
+| egression | All 10 tests | Full end-to-end functional regression |
+| pi | 	estValidateEmployeeViaApi | REST API contract validation only |
+| ole | All 3 RoleBasedAccessTest methods | RBAC / authorization boundary checks |
+| ui | All 7 EmployeeLifecycleTest + all 3 RoleBasedAccessTest | Browser UI tests |
+
+### XML-Level Group Filter
+
+Uncomment the <groups> block in 	estng.xml to run specific groups without a CLI flag:
+
+`xml
+<groups>
+    <run>
+        <include name="smoke"/>
+    </run>
+</groups>
+`
+
+### Suite Files
+
+| File | Contents |
+|---|---|
+| 	estng.xml | Full suite — all classes, all groups, listeners registered |
+| 	estng-smoke.xml | Smoke gate — filters smoke group from both test classes |
+
+---
+
+## 12. Reports and Artifacts
+
+### ExtentReports (HTML Dashboard)
+
+Generated at: eports/ExtentReport.html
+
+Each test node shows:
+- Environment name and active browser
+- TestNG groups (categories)
+- Test data logged during the run (Employee ID, API endpoints, retry attempts)
+- Pass/Fail/Skip status with stack trace
+- Failure screenshot embedded inline (PNG)
+
+Credentials and secrets are never logged — TestListener.logTestData() masks any key containing password, secret, 	oken, uth, or credential.
+
+### Allure Reports
+
+Raw results are written to 	arget/allure-results.
+
+`ash
+# Generate and open interactive HTML report
+mvn allure:serve
+
+# Generate static HTML only
+mvn allure:report
+# Open: target/site/allure-maven-plugin/index.html
+`
+
+Each test carries Allure annotations:
+- @Epic, @Feature, @Story for hierarchical categorization
+- @Severity (BLOCKER / CRITICAL / NORMAL)
+- @Allure.parameter for Environment and Browser
+- Failure screenshots attached as binary attachments
+
+### Execution Logs
+
+- Log file: logs/test-run.log (Log4j2 File appender, overwritten at the start of each run; no rotation)
+- Console output mirrors the file appender
+
+### Video Recordings
+
+ScreenRecorderUtil (Monte Media) starts one AVI recording per suite (@BeforeSuite) and stops it at @AfterSuite. The file is written to eports/videos/.
+
+**Video behavior:**
+- Recordings are generated per-suite, not per-test. A single .avi covers the entire suite run.
+- Video recording is activated unconditionally — there is no config flag to disable it without modifying BaseTest.
+- On Linux (CI), the Xvfb virtual display is required for recording to capture frames. The file is uploaded to GitHub Actions artifacts with a 7-day retention period.
+- Generated .avi files are excluded from Git via .gitignore.
+
+### Screenshot on Failure
+
+TestListener.onTestFailure() captures a screenshot via TakesScreenshot, saves it to 	est-output/screenshots/<methodName>_<timestamp>.png, embeds it in the Extent report, and attaches it to Allure. Screenshots are captured for any test failure, including failures during retry attempts.
+
+---
+
+## 13. CI/CD
+
+Pipeline file: .github/workflows/qa-automation.yml
+
+### Triggers
+
+| Event | Condition | Behavior |
+|---|---|---|
+| push | main or develop branches (non-doc changes) | Runs full matrix (Chrome + Firefox) |
+| pull_request | main or develop | Runs smoke gate first, then full matrix |
+| workflow_dispatch | Manual via GitHub UI | Selectable suite, groups, and environment |
+
+### Manual Dispatch Inputs
+
+| Input | Default | Options |
+|---|---|---|
+| 	est_suite | 	estng.xml | 	estng.xml, 	estng-smoke.xml, 	estng-individual.xml |
+| 	est_groups | *(blank = all)* | smoke, egression, ole, pi |
+| environment | qa | qa, stage, dev |
+
+### Jobs
+
+**smoke job** (PR only):
+- Chrome only, ubuntu-latest
+- Runs 	estng-smoke.xml
+- Uploads screenshots artifact
+
+**	est matrix job**:
+- Parallel across chrome and irefox with ail-fast: false
+- ubuntu-latest runner with Xvfb virtual display (:99, 1920x1080x24)
+- JDK 11 Temurin + Maven dependency cache
+
+### Artifacts Uploaded (all with if: always())
+
+| Artifact | Content | Retention |
+|---|---|---|
+| llure-results-<browser> | Raw Allure JSON | 30 days |
+| llure-report-<browser> | Generated Allure HTML | 30 days |
+| extent-report-<browser> | ExtentReports HTML dashboard | 30 days |
+| screenshots-<browser> | Failure screenshots | 30 days |
+| 	est-logs-<browser> | logs/test-run.log | 30 days |
+| ideos-<browser> | Suite AVI recording | 7 days |
+| surefire-reports-<browser> | TestNG XML surefire output | 14 days |
+| smoke-screenshots | Screenshots from PR smoke gate | Default |
+
+Artifacts are uploaded even when tests fail, enabling post-failure diagnosis without re-running.
+
+### Status Badge
+
+Replace <owner>/<repo> with your GitHub repository path:
+
+`markdown
+[![QA Automation CI](https://github.com/<owner>/<repo>/actions/workflows/qa-automation.yml/badge.svg)](https://github.com/<owner>/<repo>/actions/workflows/qa-automation.yml)
+`
+
+---
+
+## 14. Stability / Flaky Test Strategy
+
+### Why OrangeHRM Demo Tests Can Be Flaky
+
+1. **Shared public sandbox** — The demo instance is accessed by thousands of automated scripts and manual users simultaneously. Data created by other users may collide with or delete test data mid-run.
+2. **Periodic database resets** — The demo server periodically re-seeds its database, which can invalidate active sessions or wipe records mid-execution.
+3. **Asynchronous DOM hydration** — OrangeHRM uses client-side rendering (Vue.js). Elements appear in the DOM before event listeners are attached; animated overlays (.oxd-loading-spinner, form loaders) temporarily intercept clicks.
+4. **Network variability** — Variable response times from cloud hosting can cause transient HTTP 429/504 errors or slow asset loading.
+
+### Synchronization Strategy
+
+- **Zero Thread.sleep() policy** — No hardcoded pauses. Every wait is event-driven.
+- **Explicit waits via WaitUtils** — waitForVisibility, waitForElementToBeClickable, waitForInvisibility (spinner/overlay disappearance), waitForUrlContains.
+- **StaleElementReferenceException resilience** — Grid interactions re-locate elements after DOM updates. JavaScript fallbacks (jsClick, scrollIntoView) are used when native clicks are intercepted.
+- **Implicit wait is set to 0** — DriverFactory explicitly sets implicitlyWait(Duration.ZERO) so that explicit waits are the sole synchronization mechanism.
+
+### Retry Policy
+
+Retry behavior is implemented in RetryAnalyzer and applied globally by RetryAnnotationTransformer:
+
+- **Configurable count** — etry.count=1 in config.properties (or -Dretry.count=N). Clamped to the range 0–3.
+- **AssertionError bypass** — Tests that fail with an AssertionError are **never retried**. An assertion failure means the product did not behave as expected — that is a defect, not transient infrastructure noise.
+- **Retries target** — WebDriverException, socket timeouts, StaleElementReferenceException, and demo-server hiccups.
+
+**Log4j2 retry markers:**
+
+`
+WARN  [ORIGINAL FAILURE]   — first failure; retry is scheduled
+WARN  [RETRY ATTEMPT n/N]  — subsequent failure; another retry will follow
+ERROR [FINAL FAILURE]      — all retries exhausted; test is FAILED
+ERROR [ASSERTION FAILURE]  — product defect detected; retries bypassed
+`
+
+### Dynamic Data Strategy
+
+- Each test generates a fully unique employee at runtime via DataFactory.randomEmployee().
+- No test relies on data left by a previous test.
+- @AfterMethod(alwaysRun=true) cleans up any employee created during the test, regardless of pass/fail.
+
+### Quarantine Policy
+
+A test must be moved to group quarantine and excluded from the active suite when:
+
+- It fails or requires retries in more than 10% of CI runs over a rolling 7-day period.
+- Its failure mode is a genuine race condition or unhandled UI state — not fixed by increasing the retry count.
+- A known backend or infrastructure outage makes the test unreliable.
+
+**Quarantine procedure:**
+1. Assign @Test(groups = "quarantine") and remove it from 	estng.xml.
+2. File a defect or framework issue with full logs, screenshots, and Allure traces.
+3. Investigate in an isolated branch.
+4. Reinstate to the main suite only after 20+ consecutive stable runs.
+
+---
+
+## 15. Cleanup Strategy
+
+Every test that creates an employee registers its internal empNumber and guarantees cleanup.
+
+### Mechanism
+
+`java
+// Registered per-test
+private int createdEmpNumber = -1;
+
+@BeforeMethod(alwaysRun = true)
+public void setupMethod() {
+    createdEmpNumber = -1;            // reset tracker
+    apiClient.setSessionFromDriver(driver);
+}
+
+@AfterMethod(alwaysRun = true)
+public void cleanupEmployee() {
+    if (createdEmpNumber > 0) {
+        try {
+            apiClient.deleteEmployee(createdEmpNumber);
+            log.info("Cleanup: deleted empNumber={}", createdEmpNumber);
+        } catch (Exception e) {
+            log.warn("Cleanup failed for empNumber={}: {}", createdEmpNumber, e.getMessage());
+        } finally {
+            createdEmpNumber = -1;    // always reset
+        }
+    }
+}
+`
+
+### Cleanup Contract
+
+1. Check createdEmpNumber > 0 before attempting any API call — no spurious DELETE requests.
+2. Call piClient.deleteEmployee(empNumber) via the OrangeHRM bulk-delete REST endpoint.
+3. Log the result (INFO on success, WARN on exception) via Log4j2.
+4. Catch all exceptions in cleanup — they are logged but **never rethrown**, so the original test failure reason is always preserved.
+5. Reset createdEmpNumber = -1 in the inally block — cleanup runs once, not twice.
+
+### Special Case: testDeleteEmployee
+
+This test deletes the employee through the UI as part of its assertion. It resets createdEmpNumber = -1 after confirming deletion succeeds, so @AfterMethod does not attempt a redundant API delete.
+
+### RBAC Cleanup
+
+RoleBasedAccessTest uses @AfterClass(alwaysRun=true) to delete both the dynamically provisioned ESS user and the linked employee via the admin API after all three role tests complete.
+
+---
+
+## 16. Known Limitations
+
+| Limitation | Root Cause | Impact |
+|---|---|---|
+| Profile picture upload not API-testable | OrangeHRM v2 REST API has no file upload endpoint for profile pictures | 	estAddNewEmployee exercises the upload through the UI only; the API cross-check validates name/ID but not the avatar |
+| Shared public sandbox collisions | Multiple concurrent users may create/delete conflicting data | Mitigated by UUID-suffix names and unique IDs, but not fully eliminatable |
+| Demo database resets mid-run | OrangeHRM demo instance resets periodically | May cause 401s or missing records; handled by automatic session refresh in OrangeHrmApiClient |
+| No Edge browser support | DriverFactory only switches on chrome and irefox; Edge falls through to the Chrome default | Run with -Dbrowser=chrome or -Dbrowser=firefox only |
+| Video is one file per suite | ScreenRecorderUtil starts/stops once per suite in BaseTest | A single AVI covers the full run; per-test clip extraction is not supported |
+| Video cannot be disabled via config | BaseTest.@BeforeSuite calls ScreenRecorderUtil.startRecording() unconditionally | Requires BaseTest code change to disable recording |
+| Suite-level parallelism not tested | 	estng.xml uses parallel="none" | DriverFactory is ThreadLocal-safe for parallel execution, but the suites have not been validated at parallel="methods" |
+| 9-character employee ID field limit | OrangeHRM enforces a max length on the Employee ID field | Employee IDs are generated as 1-char prefix + 8 digits = 9 chars total; prefix and counter range are constrained accordingly |
+
+---
+
+## 17. Design Decisions
+
+**Independent tests over shared state** — dependsOnMethods chaining was removed entirely. Each test creates its own prerequisites via the REST API (where supported) or via the UI (profile picture upload). A single failure cannot cascade to downstream tests.
+
+**API session reuse instead of double login** — OrangeHrmApiClient extracts session cookies from the active Selenium WebDriver, so API calls operate under the same authenticated session as the browser. This avoids a second login round-trip and ensures the API and UI see the same server-side state.
+
+**AssertionError is not retryable** — RetryAnalyzer inspects the thrown Throwable. If it is an AssertionError, retries are unconditionally skipped. This design decision prevents flaky retry policies from silently hiding genuine product defects.
+
+**Zero implicit wait** — DriverFactory sets implicitlyWait to zero. Mixing implicit and explicit waits in Selenium produces unpredictable timeout behavior. All synchronization goes through WaitUtils explicit conditions.
+
+**ThreadLocal driver for parallelism** — DriverFactory stores the WebDriver in a ThreadLocal. No static mutable driver reference is used. The design is ready for parallel="tests" or parallel="methods" in TestNG without code changes.
+
+**testdata.properties as a separate layer** — Job titles, employment statuses, and name pools are test data, not framework configuration. Placing them in a separate file (	estdata.properties) means test engineers can update test data inputs without touching browser/environment config files.
+
+**RetryAnnotationTransformer instead of per-test etryAnalyzer=** — Applying RetryAnalyzer globally via IAnnotationTransformer eliminates repetitive annotation boilerplate on every @Test method. The transformer only sets the analyzer when one is not already configured, so individual tests can still opt out or use a custom implementation.
+
+**ExtentReports + Allure in parallel** — Extent provides an immediate, self-contained HTML dashboard that requires no CLI tool to open. Allure provides deeper drill-down (steps, parameters, history trends). Both are generated on every run; Extent for day-to-day use, Allure for regression analysis and CI artifact storage.

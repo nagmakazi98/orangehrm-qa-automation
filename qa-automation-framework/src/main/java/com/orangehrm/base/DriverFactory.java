@@ -60,7 +60,7 @@ public class DriverFactory {
         driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(0));
         driver.manage().timeouts().pageLoadTimeout(
                 Duration.ofSeconds(ConfigReader.getInt("page.load.timeout.seconds")));
-        driver.manage().window().maximize();
+        driver.manage().window().setSize(new org.openqa.selenium.Dimension(1920, 1080));
 
         DRIVER_THREAD_LOCAL.set(driver);
     }

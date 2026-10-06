@@ -1,0 +1,242 @@
+﻿name: QA Automation CI/CD
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'TestNG suite XML to run'
+        required: false
+        default: 'testng.xml'
+        type: choice
+        options:
+          - testng.xml
+          - testng-smoke.xml
+          - testng-individual.xml
+      test_groups:
+        description: 'TestNG groups to include (blank = all in suite)'
+        required: false
+        default: ''
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'qa'
+        type: choice
+        options:
+          - qa
+          - stage
+          - dev
+
+# ── Global defaults ────────────────────────────────────────────────────────────
+env:
+  JAVA_VERSION: '11'
+  MAVEN_OPTS: '-Xmx2048m -XX:+TieredCompilation'
+  WORKING_DIR: qa-automation-framework
+
+jobs:
+  # ── Job: Test Matrix ─────────────────────────────────────────────────────────
+  test:
+    name: '${{ matrix.browser }} | ${{ inputs.test_suite || ''testng.xml'' }}'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false        # one browser failure must NOT cancel the other
+      matrix:
+        browser: [ chrome, firefox ]
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # ── 2. Java ──────────────────────────────────────────────────────────────
+      - name: Set up JDK ${{ env.JAVA_VERSION }} (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      # ── 3. Browser setup ─────────────────────────────────────────────────────
+      - name: Set up Chrome
+        if: matrix.browser == 'chrome'
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Set up Firefox
+        if: matrix.browser == 'firefox'
+        uses: browser-actions/setup-firefox@v1
+
+      - name: Set up GeckoDriver (Firefox)
+        if: matrix.browser == 'firefox'
+        uses: browser-actions/setup-geckodriver@v1
+
+      # ── 4. Xvfb virtual display (required for headless on Linux) ─────────────
+      - name: Start Xvfb virtual display
+        run: |
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      # ── 5. Resolve test suite / groups ───────────────────────────────────────
+      - name: Resolve test parameters
+        id: params
+        run: |
+          SUITE="${{ inputs.test_suite || 'testng.xml' }}"
+          GROUPS="${{ inputs.test_groups }}"
+          ENV="${{ inputs.environment || 'qa' }}"
+          echo "suite=$SUITE"   >> $GITHUB_OUTPUT
+          echo "groups=$GROUPS" >> $GITHUB_OUTPUT
+          echo "env=$ENV"       >> $GITHUB_OUTPUT
+
+      # ── 6. Run tests ─────────────────────────────────────────────────────────
+      - name: Run test suite (${{ matrix.browser }})
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          # Credentials injected from GitHub Secrets — never hardcoded
+          ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+          ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+          ORANGEHRM_ESS_USERNAME: ${{ secrets.ORANGEHRM_ESS_USERNAME }}
+          ORANGEHRM_ESS_PASSWORD: ${{ secrets.ORANGEHRM_ESS_PASSWORD }}
+        run: |
+          GROUPS_ARG=""
+          if [ -n "${{ steps.params.outputs.groups }}" ]; then
+            GROUPS_ARG="-Dgroups=${{ steps.params.outputs.groups }}"
+          fi
+
+          mvn clean test \
+            -Denv=${{ steps.params.outputs.env }} \
+            -Dheadless=true \
+            -Dbrowser=${{ matrix.browser }} \
+            -DsuiteXmlFile=${{ steps.params.outputs.suite }} \
+            $GROUPS_ARG \
+            --no-transfer-progress \
+            -B
+
+      # ── 7. Generate Allure HTML report ───────────────────────────────────────
+      - name: Generate Allure report
+        if: always()
+        working-directory: ${{ env.WORKING_DIR }}
+        run: mvn allure:report --no-transfer-progress -B -q
+        continue-on-error: true   # report generation failure must not fail the build
+
+      # ── 8. Upload artifacts (always — even on test failure) ──────────────────
+      - name: Upload Allure results (raw)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/target/allure-results
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload Allure HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/target/site/allure-maven-plugin
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload ExtentReport HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extent-report-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/reports/ExtentReport.html
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/test-output/screenshots
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload test execution logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/logs/test-run.log
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload video recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/reports/videos
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload Surefire XML reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ matrix.browser }}
+          path: ${{ env.WORKING_DIR }}/target/surefire-reports
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ── Job: Smoke gate (single fast check before matrix) ────────────────────────
+  smoke:
+    name: 'Smoke Gate (Chrome)'
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }} (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Start Xvfb virtual display
+        run: |
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
+      - name: Run smoke tests
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          ORANGEHRM_USERNAME: ${{ secrets.ORANGEHRM_USERNAME }}
+          ORANGEHRM_PASSWORD: ${{ secrets.ORANGEHRM_PASSWORD }}
+        run: |
+          mvn clean test \
+            -Denv=qa \
+            -Dheadless=true \
+            -Dbrowser=chrome \
+            -DsuiteXmlFile=testng-smoke.xml \
+            --no-transfer-progress \
+            -B
+
+      - name: Upload smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: ${{ env.WORKING_DIR }}/test-output/screenshots
+          if-no-files-found: warn

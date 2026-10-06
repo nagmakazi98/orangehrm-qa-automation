@@ -1,6 +1,5 @@
 package com.orangehrm.pages;
 
-import com.orangehrm.utils.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -8,10 +7,7 @@ import org.openqa.selenium.WebElement;
 /**
  * Page Object for the OrangeHRM Login page.
  */
-public class LoginPage {
-
-    private final WebDriver driver;
-    private final WaitUtils waitUtils;
+public class LoginPage extends BasePage {
 
     // Locators
     private final By usernameInput = By.name("username");
@@ -20,11 +16,11 @@ public class LoginPage {
     private final By loginErrorAlert = By.cssSelector(".oxd-alert-content-text");
 
     public LoginPage(WebDriver driver) {
-        this.driver = driver;
-        this.waitUtils = new WaitUtils(driver);
+        super(driver);
     }
 
     public LoginPage enterUsername(String username) {
+        log.info("Entering username: {}", username);
         WebElement field = waitUtils.waitForVisible(usernameInput);
         field.clear();
         field.sendKeys(username);
@@ -32,6 +28,7 @@ public class LoginPage {
     }
 
     public LoginPage enterPassword(String password) {
+        log.info("Entering password");
         WebElement field = waitUtils.waitForVisible(passwordInput);
         field.clear();
         field.sendKeys(password);
@@ -39,6 +36,7 @@ public class LoginPage {
     }
 
     public DashboardPage clickLogin() {
+        log.info("Clicking login button");
         waitUtils.waitForClickable(loginButton).click();
         return new DashboardPage(driver);
     }

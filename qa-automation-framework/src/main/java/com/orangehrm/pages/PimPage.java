@@ -1,24 +1,18 @@
 package com.orangehrm.pages;
 
-import com.orangehrm.utils.WaitUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Keys;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
 
-import java.time.Duration;
 import java.util.List;
 
 /**
  * Page Object for PIM > Employee List: search by Employee Id, open a record,
  * and delete a record. Also exposes navigation to the "Add Employee" screen.
  */
-public class PimPage {
-
-    private final WebDriver driver;
-    private final WaitUtils waitUtils;
+public class PimPage extends BasePage {
 
     private final By addEmployeeButton = By.xpath("//button[normalize-space()='Add']");
     private final By employeeIdSearchInput =
@@ -33,19 +27,36 @@ public class PimPage {
     private final By noRecordsFound = By.xpath("//span[text()='No Records Found']");
 
     public PimPage(WebDriver driver) {
-        this.driver = driver;
-        this.waitUtils = new WaitUtils(driver);
+        super(driver);
     }
 
     public AddEmployeePage clickAddEmployee() {
+        log.info("Clicking 'Add' employee button");
         waitUtils.safeClick(addEmployeeButton);
         return new AddEmployeePage(driver);
+    }
+
+    public boolean isAddEmployeeButtonDisplayed() {
+        try {
+            return waitUtils.waitForVisible(addEmployeeButton).isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isSearchButtonDisplayed() {
+        try {
+            return waitUtils.waitForVisible(searchButton).isDisplayed();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
      * Searches the Employee List by Employee Id and waits for the grid to refresh.
      */
     public PimPage searchByEmployeeId(String employeeId) {
+        log.info("Searching employee by ID: {}", employeeId);
         WebElement field = waitUtils.waitForVisible(employeeIdSearchInput);
         field.sendKeys(Keys.chord(Keys.CONTROL, "a"), Keys.BACK_SPACE);
         field.sendKeys(employeeId);
@@ -54,12 +65,11 @@ public class PimPage {
         return this;
     }
 
-    private void waitForGridToLoad() {
+    public void waitForGridToLoad() {
         try {
-            new WebDriverWait(driver, Duration.ofSeconds(5))
-                    .until(ExpectedConditions.invisibilityOfElementLocated(loadingSpinner));
+            waitUtils.waitForInvisible(loadingSpinner);
         } catch (Exception ignored) {
-            // spinner may already be gone
+            // spinner already gone
         }
     }
 
@@ -68,13 +78,25 @@ public class PimPage {
         if (!driver.findElements(noRecordsFound).isEmpty()) {
             return false;
         }
+        // The grid refreshes asynchronously after Search; wait until a row shows this ID
+        // instead of reading whatever rows are in the DOM at this instant.
+        try {
+            waitUtils.waitForTextPresent(employeeTableRows, employeeId);
+        } catch (TimeoutException e) {
+            log.debug("No row containing '{}' appeared within the explicit wait", employeeId);
+        }
         List<WebElement> rows = driver.findElements(employeeTableRows);
         return rows.stream().anyMatch(row -> row.getText().contains(employeeId));
     }
 
     public boolean isNoRecordsFound() {
         waitForGridToLoad();
-        return !driver.findElements(noRecordsFound).isEmpty();
+        try {
+            return waitUtils.waitForVisible(noRecordsFound).isDisplayed();
+        } catch (Exception e) {
+            return !driver.findElements(noRecordsFound).isEmpty()
+                    || driver.findElements(employeeTableRows).isEmpty();
+        }
     }
 
     /**
@@ -82,11 +104,9 @@ public class PimPage {
      * (used for the Edit flow).
      */
     public PersonalDetailsPage openFirstSearchResult() {
-        List<WebElement> rows = driver.findElements(employeeTableRows);
-        if (rows.isEmpty()) {
-            throw new RuntimeException("No employee row found to open for editing.");
-        }
-        rows.get(0).click();
+        log.info("Opening first search result row");
+        waitForGridToLoad();
+        waitUtils.safeClick(employeeTableRows);
         return new PersonalDetailsPage(driver);
     }
 
@@ -95,6 +115,7 @@ public class PimPage {
      * confirms the deletion dialog.
      */
     public PimPage deleteFirstSearchResult() {
+        log.info("Deleting first search result in PIM grid");
         waitForGridToLoad();
         if (!driver.findElements(deleteTrashIconButton).isEmpty()) {
             waitUtils.safeClick(deleteTrashIconButton);
